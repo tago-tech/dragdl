@@ -13,7 +13,7 @@ DragDL是一款易用的深度学习模型构建系统，支持在可视化的�
 
 DragDL基于Web的C/S架构提供服务。
 
-![ARCH](https://github.com/tago-tech/dragdl/blob/master/demo/arch.jpg)
+![ARCH](https://github.com/tago-tech/dragdl/blob/master/demo/arch.jpg#pic_center)
 
 系统客户端（前端）基于Web技术设计，支持用户通过在数据流图画布上拖拽GUI算子构建数据处理逻辑以及深度学习模型。系统提供了一系列预训练的深度学习模型让模型构建的过程更加方便，并且提供一些公开数据集便于用户测试调试模型。此外系统也提供GUI界面用于可视化训练过程和测试集上的性能表现。客户端通过Restful方式与服务器进行通信，客户端上生成的数据流图被提交到服务器端。
 服务器端（后端）采用Master-Slave的分布式集群模型，Master节点提供Web服务、数据流分析器、任务调度器以及监控数据收集器等几个模块。其中数据流图分析器主要从用户提交的数据流图中解析出数据变换操作、选用的预训练模型、以及数据集等关键信息，并将这些信息转换成代码调用。
@@ -24,7 +24,7 @@ DragDL基于PaddlePaddle构建，并将用户提交的数据流图转换成Paddl
 
 DragDL基于数据流图的思想实现对计算任务的抽象。DragDL的计算任务中含有三类算子:a）数据集算子，为训练或预测任务提供数据输入；b）数据操作算子，完成数据的预处理任务；c）模型算子，代表计算任务所使用的深度模型，学习如何基于数据预测结果。计算任务的执行过程就等同于源数据从数据集节点中输入，经过不同的操作算子完成不同的转换操作，最终被加载到模型之中进行训练或预测任务。
 
-![DataFlow](https://github.com/tago-tech/dragdl/blob/master/demo/dataflow_graph.jpg)
+![DataFlow](https://github.com/tago-tech/dragdl/blob/master/demo/dataflow_graph.jpg#pic_center)
 
 DragDL将为每个客户端提交的数据流图处理任务创建一个DataflowGraph实例。图3展示了DataflowGraph类的核心功能，当被实例化时，首先调用init()方法从JSON文件中解析出数据集结点（通过parseDataSet方法），并解析出数据操作算子和它们之间的依赖关系（通过parseOps方法），最后还要解析出所采用的模型（通过parseModel方法）。目前的模型配置仅支持已经在系统中注册过的模型（包括经典模型库和用户自定义注册的模型），如果用户需要自定义模型，可以在系统注册（将在下一节介绍）。接下来生成一个数据流图的执行过程的程序，根据节点的类别调用DataSet Libary、Operator Libary、Pretrained Models等模块提供的接口完成数据流图到代码的翻译。被调度器调度执行时，调用数据流图对象中的run()方法则可以依次加载数据集（data），并施加算子流中的数据预处理操作（ops）和模型操作（model）。数据流图中的数据预处理流程通过解析器翻译成Python代码，用于处理数据集，并保持和标签的对应关系。解析出来的模型算子操作交由PaddlePaddle框架进行加载并初始化，之后PaddlePaddle将前面预处理得到的数据集（包括训练数据和标签）作为输入开始训练。
 训练过程会被基于Web的监控平台所展示，关于图形化的监控平台将在后面章节介绍。训练好的模型将保存在服务器存储系统上，用户可以在监控平台上查看训练准确率。在之后的推理过程中，用户直接调用保存的模型进行推理预测。
@@ -33,7 +33,7 @@ DragDL将为每个客户端提交的数据流图处理任务创建一个Dataflow
 
 为了在模型复用时确定模型参数的作用边界，复用功能类似的模块和网络，方便网络层替换时不影响其他功能模块的网络层参数，DragDL将整个模型网络分为若干部分。以图像分类应用为例说明，可以将某个图像分类网络分为两大部分：特征提取网络和分类网络。特征提取网络包含若干与特征提取功能相关的网络层，常见的卷积神经网络中浅层的卷积核倾向于提取点、颜色等基础特征，后继的卷积层通过相互作用逐渐学习到线段、形状等抽象特征[9]。而分类网络包含若干与分类判断功能相关的网络层，基于特征提取网络层输出的特征向量作为输入进行推理判断，例如全连接层进行分类判断，RNN层进行序列分析。系统通过复用经典模型中特征提取网络的结构为用户提供模型构建支持。模型构建时仅复用经典模型中特征提取网络部分，等价于对经典模型中原始的分类网络结构进行截断。
 
-![Finetune](https://github.com/tago-tech/dragdl/blob/master/demo/finetune_stratege.png)
+![Finetune](https://github.com/tago-tech/dragdl/blob/master/demo/finetune_stratege.png#pic_center)
 
 模型训练过程可以分为初始化和微调两个阶段。初始化阶段DargDL使用PaddleHub中保存的预训练模型参数去初始化特征提取网络部分，分类网络部分仅仅使用随机初始化方式，复用预训练模型中的参数同时也能够迁移预训练模型强大的特征提取能力到新的分类任务中[9]。模型微调训练的过程有两种方式：a）微调分类网络层的方式，如图7(a)中，PaddlePaddle冻结特征提取网络的参数，使其不参与优化过程，由于已使用预训练模型参数进行初始化，这部分网络仍能具有一定的特征提取能力，训练时仅仅优化分类网络部分的参数，模型结构的复杂度降低使得这种方式能够减少用户因数据量不足带来的过拟合风险；b）微调模型的方式，如图7(b)，PaddlePaddle将会在训练过程中优化所有的模型参数，包括特征提取网络，这种方式使得用户数据与预训练数据集相似度不高时，提高模型在新任务下的特征提取能力。
 
@@ -46,15 +46,15 @@ DragDL将为每个客户端提交的数据流图处理任务创建一个Dataflow
 
 1. 数据流图编辑界面为系统核心界面，简单组建图拓扑信息，并填充节点参数，使用这种拓扑结构表达计算任务的逻辑。
 
-![Canvas](https://github.com/tago-tech/dragdl/blob/master/demo/dataflow_canvas.jpg)
+![Canvas](https://github.com/tago-tech/dragdl/blob/master/demo/dataflow_canvas.jpg#pic_center)
 
 2. 任务管理界面中即为系统主界面，为用户提供任务的实时状态、任务控制、数据上传等。
 
-![Tasks Center](https://github.com/tago-tech/dragdl/blob/master/demo/tasks_center.png)
+![Tasks Center](https://github.com/tago-tech/dragdl/blob/master/demo/tasks_center.png#pic_center)
 
 3. 任务监测以上传界面，提供异步任务执行状态、任务控制，数据可视化呈现，以及在线预测。
 
-![Inference](https://github.com/tago-tech/dragdl/blob/master/demo/Online_Inference.jpg)
+![Inference](https://github.com/tago-tech/dragdl/blob/master/demo/Online_Inference.jpg#pic_center)
 
 ### 服务器结构
 
@@ -64,20 +64,22 @@ DragDL将为每个客户端提交的数据流图处理任务创建一个Dataflow
 
 + taskscenter  - 核心模块，负责数据流图解析、模型解析构建、异步任务分发调度等，与多个worker节点通过任务队列相关联;
 
++ configs - Dockerfile、Python等环境配置文件
+
 ### Envs
 
 + Python3.6/Django3.0/PaddlePaddle1.5.2/PaddleHub1.1/pillow6.1.0/Celery4.4.2/Redis/Docker19.03.5
 
 ### Commands
 
-* Web server
+* Web server:
     python manage.py runserver 0.0.0.0
 * database:
     python manage.py makemigrations
     python manage.py migrate
-* mutil-Workers
+* mutil-Workers:
     mutil start {workername}
-* Redis Server
+* Redis Server:
     docker run -itd -v {YourRedisPath}:/data -p 6379:6379 myredis redis-server
 
 ### Tips
