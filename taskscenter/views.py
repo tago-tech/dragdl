@@ -5,79 +5,77 @@ from django.shortcuts import render
 from rest_framework import viewsets
 from rest_framework.response import Response
 from rest_framework.decorators import action
-# 用户校验
+# user token control
 from userapp.token import verify_token,tokenUserInfo,userInfoCheck
 from userapp.models import User
 from userapp.serializers import  UserSerializer
-# 异步任务
+# async task control
 from webserverDev import celery_app
 from taskscenter import tasks
 from taskscenter.models import Task
 from taskscenter.serializers import TaskSerializer
 from taskscenter import tmanager
+# log moudle
+from celery.utils.log import get_task_logger
 
-# Create your views here.
+logger = get_task_logger('workerslogger')
+
 class TasksViewSet(viewsets.ModelViewSet):
     serializer_class = TaskSerializer
     queryset = Task.objects.all()
 
-    # 构建并启动任务
+    # build and boot task.
     @action(detail=False, methods=['post'])
     def buildtask(self,request):
         """
-                建立一个任务并执行
-
-                # 用户验证
-                # 异常检查
-                # 结果回传
+            Set up a task and execute it
+            1.authentication
+            2.execption
+            3.return results
         """
         res = {
                 "success":False,
-                "message":"登录要求(权限问题)"
+                "message":"Authority issues."
         }
-        # 用户验证
+        # authentication
         online_who = userInfoCheck(request)
         if( online_who == 'guest'):
-            # 登陆要求
             return Response(res)
         else:
-            # IO异常 , 任务创建异常，数据库异常
+
             try:
-                res['message'] = "权限验证通过，未解析中"
+                res['message'] = "permission verification passed."
                 data = json.loads(request.body)
-                print("Server 收到 请求:{}".format(data))
+                logger.info("server recieve request:{}".format(data))
 
                 meta = json.loads(request.body)
-                # 用户索引
+                
                 user = User.objects.filter(username=meta['username'])[0]
-                # 任务数据库实例
+
                 task_object = tmanager.CreateTask(user,meta)
 
-                res["message"] = "构建任务成功"
+                res["message"] = "build task successful."
                 res["success"] = True
                 res["TaskId"] = task_object.id
 
-            except IOError:
-                print(" IO 错误 !")
+            except IOError as io_err:
+                logger.error("Fail to build task ,for IOExecption Occur:{}".format(io_err))
             finally:
                 return Response(res)
         
-        # tasks.mul.delay(2,3)
-
-    # 查看指定任务详情(运行中、失败、成功)
+    # query task instance.
     @action(detail=False,methods=['post'])
     def lookTask(self,request):
-        data = json.loads(request.body)
-        print(data)
+        data = json.loads(request.body)        
         reponse = tmanager.QTask(data['tid'])
         return Response( reponse )
 
-    # 查看用户下任务集
+    # query user datasets.
     @action(detail=False,methods=['post'])
     def listUserTasks(self,request):
         
         online_who = userInfoCheck(request)
-        print('[listUserTasks]当前用户:'+online_who)
+        print('[listUserTasks]Current user:'+online_who)
         data = json.loads(request.body)
         res = {
             'successful':False,
@@ -86,7 +84,7 @@ class TasksViewSet(viewsets.ModelViewSet):
             'taskInfos':[]
         }
         if not len(User.objects.filter(username=data['username'])):
-            res['message'] = '用户不存在'
+            res['message'] = 'user does not exist'
             return Response(res)  
         user = User.objects.filter(username=data['username'])[0]
         tasksObjs = Task.objects.filter(task_author=user)
@@ -104,22 +102,21 @@ class TasksViewSet(viewsets.ModelViewSet):
         res['successful'] = True
         return Response(res)
 
-    # 重启任务
+    # revoker task.
     def editTask(self,request):
         pass
     
-    # 删除任务
+    # remove task.
     def removeTask(self,request):
         pass
 
-    # 暂停任务
+    # pause task.
     def stopTask(self,request):
         pass
 
-    # 预测任务
+    # sync predict task.
     @action(detail=False,methods=['post'])
     def predict(self,request):
-        #相应格式
         res = {
             'successful':False,
             'picName':'',
@@ -129,87 +126,87 @@ class TasksViewSet(viewsets.ModelViewSet):
                 'scores':[]
             }
         }
-        # 获取相关的 task id
         tid = request.data['tid']
 
-        #获取提交的图片
         fileInstance = request.FILES.get('file')
         storeKey = 'CacheP{}_{}'.format(random.random(),fileInstance.name)
         path2PicStore = './taskscenter/tlapp/dlib/datas/Caches/{}'.format(storeKey)
-        #存入图片
+        
         with open(path2PicStore,'wb')  as f:
             for fileChunk in fileInstance.chunks():
                 f.write(fileChunk)
 
         result = tmanager.basicForecast(path2PicStore,tid)
 
+        
+
         if result is not None:
             res['picName'] = fileInstance.name
             res['result'] = result['result'].split('#')[0]
             res['info']['cateigies'] = result['classes']
             res['info']['scores'] = result['socres']
-        print('预测结果:{}'.format(res))
+        
+        logger.info("Prediction:{}".format(res))
+        
+        res['successful'] = True
+
         return Response(res)
 
-    # 测试 get \ post \ 用户检查 方法
     @action(detail=False,methods=['post'])
     def invokeAsync(self,request):
-        # 测试数据
+
         meta = json.loads(request.body)
 
-        # 用户索引
         user = User.objects.filter(username=meta['username'])[0]
-        # 任务数据库实例
+
         task_object = tmanager.CreateTask(user,meta)
 
-        return Response({"successful":True,"message":"新建任务成功","TaskId":task_object.id})
+        return Response({"successful":True,"message":"New task successfully created","TaskId":task_object.id})
     
-    ###
-        数据相关操作
-    ###
-    #上传并解压缩用户数据集
+    #Data interfaces
+    #Upload and decompress user datasets
     @action(detail=False,methods=['post'])
     def addDatafile(self,request):
         res = {
             'successful':False,
             'message':'accept'
         }
-        #获取当前登录用户
+        #Get current login user
         username = userInfoCheck(request)
-        #计算写入的目录
+
         fileInstance = request.FILES.get('file')
+        logger.info("Upload and decompress user datasets [{}]".format(fileInstance))
+
         path2Store = './taskscenter/tlapp/dlib/datas/Caches/{}'.format(fileInstance.name)
         with open(path2Store,'wb') as f:
             for fileChunk in fileInstance.chunks():
+                logger.info('{} write {}...'.format(fileInstance.name,path2Store))
                 f.write(fileChunk)
-        #解压缩
         pathUNZIP = './taskscenter/tlapp/dlib/datas/{}/'.format(username)
         tmanager.extract_archive(path2Store,pathUNZIP,True)
         return Response(res)
 
-    #查看用户所有数据集列表
+    #View a list of all user datasets
     @action(detail=False,methods=['post'])
     def listUserDatas(self,request):
-        #响应格式
         res = {
             'successful':False,
             'datasetsName':[],
             'datasinfo':[]
         }
-        #用户信息
         username = userInfoCheck(request)
-        #用户数据集主目录
+        logger.info('[listUserDatas]Current user:{}'.format(username))
         rootData = './taskscenter/tlapp/dlib/datas/{}/'.format(username)
+        
         if not os.path.exists(rootData):
             return Response(res)
-        #数据集名称集合
+
         datasetsName = list(
             filter(
                 lambda p: os.path.isdir(os.path.join(rootData, p)),
                 os.listdir(rootData)
             )
         )
-        #统计各数据集信息
         datasinfo = []
         for dataItem in datasetsName:
             datasinfo.append(tmanager.userDataDetails(username,dataItem))
@@ -218,30 +215,32 @@ class TasksViewSet(viewsets.ModelViewSet):
         res['datasetsName'] = datasetsName
         res['datasinfo'] = datasinfo
 
+        logger.info('[listUserDatas] return {}'.format(res))
+        
         return Response(res)
 
     @action(detail=False,methods=['post'])
     def userScence(self,request):
         
         username = userInfoCheck(request)
+        logger.info('[userSencen]Current user:{}'.format(username))
+
         userMenuJson = None
+        
         with open('./taskscenter/tlapp/apiDemo.json','r') as f:
             userMenuJson = json.load(f)
         
-        #用户数据集主目录
         rootData = './taskscenter/tlapp/dlib/datas/{}/'.format(username)
         
         if not os.path.exists(rootData):
             return Response(userMenuJson)
 
-        #数据集名称集合
         datasetsName = list(
             filter(
                 lambda p: os.path.isdir(os.path.join(rootData, p)),
                 os.listdir(rootData)
             )
         )
-        #统计各数据集信息
         datasinfo = []
         for dataItem in datasetsName:
             datasinfo.append(len(tmanager.userDataDetails(username,dataItem)['cateigiesName']))
@@ -259,5 +258,6 @@ class TasksViewSet(viewsets.ModelViewSet):
         return Response(userMenuJson)
 
     
+
 
 
